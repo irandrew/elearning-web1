@@ -289,9 +289,12 @@ export default function App() {
       await LogService.log('error', 'Auth', `Login failure: ${e.code || e.message}`);
       
       let friendlyMessage = "Authentication interrupted";
-      if (e.code === 'auth/popup-blocked') {
-        friendlyMessage = "Popup blocked. Attempting alternative connection...";
-        // Semi-automatic fallback to redirect if popup is blocked
+      if (e.code === 'auth/popup-blocked' || e.code === 'auth/network-request-failed') {
+        friendlyMessage = e.code === 'auth/popup-blocked' 
+          ? "Popup blocked. Attempting alternative connection..." 
+          : "Network friction detected. Switching to secure redirect...";
+        
+        // Semi-automatic fallback to redirect
         setTimeout(() => handleLogin(asLecturer, true), 2000);
       } else if (e.code === 'auth/popup-closed-by-user') {
         friendlyMessage = "Sign-in window closed. Please try again.";

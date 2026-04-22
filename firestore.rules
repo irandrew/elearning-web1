@@ -52,12 +52,11 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if isSignedIn();
-      allow list: if false; // Users shouldn't be listable generally for security
+      allow list: if false; 
       allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming());
       allow update: if isSignedIn() && isOwner(userId) && 
-                      incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']) &&
-                      incoming().uid == existing().uid &&
-                      incoming().role == existing().role;
+                      incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'role']) &&
+                      incoming().uid == existing().uid;
     }
 
     match /courses/{courseId} {
@@ -77,6 +76,11 @@ service cloud.firestore {
                       incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'completedModuleIds', 'lastAccessed']) &&
                       incoming().userId == existing().userId &&
                       incoming().courseId == existing().courseId;
+    }
+
+    match /system_logs/{logId} {
+      allow read: if isLecturer();
+      allow create: if isSignedIn();
     }
   }
 }
