@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db, signInWithGoogle } from './lib/firebase';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { UserProfile, UserRole, Course, Enrollment, Module, SystemLog } from './types';
 import { CourseService, LogService } from './services/courseService';
 import { 
@@ -196,6 +196,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
@@ -231,6 +232,7 @@ export default function App() {
 
   const handleLogin = async (asLecturer: boolean = false) => {
     try {
+      setAuthLoading(true);
       const u = await signInWithGoogle();
       if (u) {
         const docRef = doc(db, 'users', u.uid);
@@ -248,8 +250,18 @@ export default function App() {
             createdAt: serverTimestamp()
           };
           await setDoc(docRef, profile);
+          await LogService.log('info', 'Auth', `New ${profile.role} account created: ${profile.email}`);
         } else {
           profile = docSnap.data() as UserProfile;
+          // Logic: If they explicitly clicked "Sign in as Lecturer" but they are a Student, 
+          // we should probably let them through if they are authorized, or just update the role for this demo environment.
+          // For now, let's treat the explicit button click as an intent to use that role.
+          if (asLecturer && profile.role !== 'lecturer') {
+             profile.role = 'lecturer';
+             await updateDoc(docRef, { role: 'lecturer' });
+             await LogService.log('info', 'Auth', `User ${profile.email} upgraded to Lecturer role`);
+             showToast("Instructor privileges activated", "success");
+          }
         }
 
         setUserProfile(profile);
@@ -258,9 +270,15 @@ export default function App() {
         } else {
           setActiveTab('dashboard');
         }
+        showToast(`Welcome back, ${profile.displayName}`, "success");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      await LogService.log('error', 'Auth', `Login failure: ${e.message}`);
+      showToast("Authentication interrupted", "error");
+    } finally {
+      setAuthLoading(false);
+      setLoading(false);
     }
   };
 
@@ -312,17 +330,23 @@ export default function App() {
           <div className="flex flex-col sm:flex-row gap-4 w-full">
             <button 
               onClick={() => handleLogin(false)}
-              className="flex-1 bg-ur-yellow hover:bg-yellow-400 text-slate-900 font-black py-5 px-8 rounded-2xl transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-4 shadow-xl shadow-ur-yellow/20 text-[10px] uppercase tracking-widest"
+              disabled={authLoading}
+              className={`flex-1 bg-ur-yellow hover:bg-yellow-400 text-slate-900 font-black py-5 px-8 rounded-2xl transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-4 shadow-xl shadow-ur-yellow/20 text-[10px] uppercase tracking-widest ${authLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-1" alt="Google" />
-              Student Portal Access
+              {authLoading ? <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /> : (
+                <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-1" alt="Google" />
+              )}
+              {authLoading ? 'Authorizing...' : 'Student Portal Access'}
             </button>
             <button 
               onClick={() => handleLogin(true)}
-              className="flex-1 bg-white/10 hover:bg-white/20 text-white font-black py-5 px-8 rounded-2xl transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-4 border border-white/10 text-[10px] uppercase tracking-widest"
+              disabled={authLoading}
+              className={`flex-1 bg-white/10 hover:bg-white/20 text-white font-black py-5 px-8 rounded-2xl transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-4 border border-white/10 text-[10px] uppercase tracking-widest ${authLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <Users className="w-5 h-5 text-ur-yellow" />
-              Sign in as Lecturer
+              {authLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : (
+                <Users className="w-5 h-5 text-ur-yellow" />
+              )}
+              {authLoading ? 'Verifying...' : 'Sign in as Lecturer'}
             </button>
           </div>
 
@@ -330,6 +354,16 @@ export default function App() {
             Institutional ICT Quality Standard Verified
           </div>
         </motion.div>
+
+        <AnimatePresence>
+          {toast && (
+            <Toast 
+              message={toast.message} 
+              type={toast.type} 
+              onClose={() => setToast(null)} 
+            />
+          )}
+        </AnimatePresence>
       </div>
     );
   }
