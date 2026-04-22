@@ -240,76 +240,21 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  const handleLogin = async (asLecturer: boolean = false, useRedirect: boolean = false) => {
-    try {
-      setAuthLoading(true);
-      const u = await signInWithGoogle(useRedirect);
-      if (useRedirect) return; // Browser will navigate away
-
-      if (u) {
-        const docRef = doc(db, 'users', u.uid);
-        const docSnap = await getDoc(docRef);
-        
-        let profile: UserProfile;
-
-        if (!docSnap.exists()) {
-          profile = {
-            uid: u.uid,
-            email: u.email || '',
-            displayName: u.displayName || (asLecturer ? 'UR Lecturer' : 'UR Student'),
-            photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName || 'User')}&background=003399&color=fff`,
-            role: asLecturer ? 'lecturer' : 'student',
-            createdAt: serverTimestamp()
-          };
-          await setDoc(docRef, profile);
-          await LogService.log('info', 'Auth', `New ${profile.role} account created: ${profile.email}`);
-        } else {
-          profile = docSnap.data() as UserProfile;
-          // Logic: If they explicitly clicked "Sign in as Lecturer" but they are a Student, 
-          // we should probably let them through if they are authorized, or just update the role for this demo environment.
-          // For now, let's treat the explicit button click as an intent to use that role.
-          if (asLecturer && profile.role !== 'lecturer') {
-             profile.role = 'lecturer';
-             await updateDoc(docRef, { role: 'lecturer' });
-             await LogService.log('info', 'Auth', `User ${profile.email} upgraded to Lecturer role`);
-             showToast("Instructor privileges activated", "success");
-          }
-        }
-
-        setUserProfile(profile);
-        if (profile.role === 'lecturer') {
-          setActiveTab('admin');
-        } else {
-          setActiveTab('dashboard');
-        }
-        showToast(`Welcome back, ${profile.displayName}`, "success");
-      }
-    } catch (e: any) {
-      console.error("Full Auth Error:", e);
-      await LogService.log('error', 'Auth', `Login failure: ${e.code || e.message}`);
-      
-      let friendlyMessage = "Authentication interrupted";
-      if (e.code === 'auth/popup-blocked' || e.code === 'auth/network-request-failed') {
-        friendlyMessage = e.code === 'auth/popup-blocked' 
-          ? "Popup blocked. Attempting alternative connection..." 
-          : "Network friction detected. Switching to secure redirect...";
-        
-        // Semi-automatic fallback to redirect
-        setTimeout(() => handleLogin(asLecturer, true), 2000);
-      } else if (e.code === 'auth/popup-closed-by-user') {
-        friendlyMessage = "Sign-in window closed. Please try again.";
-      } else if (e.message) {
-        friendlyMessage = e.message;
-      }
-      
-      showToast(friendlyMessage, "error");
-    } finally {
-      setAuthLoading(false);
-      setLoading(false);
-    }
+  const handleDirectLogin = (asLecturer: boolean = false) => {
+    const profile: UserProfile = {
+      uid: `user_${Math.random().toString(36).substr(2, 9)}`,
+      email: asLecturer ? 'lecturer@ur.ac.rw' : 'student@ur.ac.rw',
+      displayName: asLecturer ? 'Lecturer Account' : 'Student Account',
+      photoURL: `https://ui-avatars.com/api/?name=${asLecturer ? 'LA' : 'SA'}&background=003399&color=fff`,
+      role: asLecturer ? 'lecturer' : 'student',
+      createdAt: null as any
+    };
+    setUserProfile(profile);
+    setActiveTab(asLecturer ? 'admin' : 'dashboard');
+    showToast(`Access granted: ${profile.displayName}`, "success");
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleLogout = () => setUserProfile(null);
 
   const viewCourse = (id: string) => {
     setSelectedCourseId(id);
@@ -354,26 +299,21 @@ export default function App() {
             University of Rwanda Academic Hub.<br />Access your studies with UR credentials.
           </p>
           
-          <div className="flex flex-col sm:flex-row gap-4 w-full">
+          <div className="flex flex-col sm:flex-row gap-6 w-full">
             <button 
-              onClick={() => handleLogin(false)}
-              disabled={authLoading}
-              className={`flex-1 bg-ur-yellow hover:bg-yellow-400 text-slate-900 font-black py-5 px-8 rounded-2xl transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-4 shadow-xl shadow-ur-yellow/20 text-[10px] uppercase tracking-widest ${authLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              onClick={() => handleDirectLogin(false)}
+              className="flex-1 bg-ur-yellow hover:bg-yellow-400 text-slate-900 font-black py-6 px-8 rounded-2xl transition-all transform hover:scale-[1.03] active:scale-[0.97] flex flex-col items-center justify-center gap-3 shadow-2xl shadow-ur-yellow/20"
             >
-              {authLoading ? <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /> : (
-                <img src="https://www.google.com/favicon.ico" className="w-5 h-5 bg-white rounded-full p-1" alt="Google" />
-              )}
-              {authLoading ? 'Authorizing...' : 'Student Portal Access'}
+              <GraduationCap className="w-8 h-8" />
+              <span className="text-[12px] uppercase tracking-widest">Enter Student Portal</span>
             </button>
+
             <button 
-              onClick={() => handleLogin(true)}
-              disabled={authLoading}
-              className={`flex-1 bg-white/10 hover:bg-white/20 text-white font-black py-5 px-8 rounded-2xl transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-4 border border-white/10 text-[10px] uppercase tracking-widest ${authLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              onClick={() => handleDirectLogin(true)}
+              className="flex-1 bg-white/10 hover:bg-white/20 text-white font-black py-6 px-8 rounded-2xl transition-all transform hover:scale-[1.03] active:scale-[0.97] flex flex-col items-center justify-center gap-3 border border-white/10"
             >
-              {authLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : (
-                <Users className="w-5 h-5 text-ur-yellow" />
-              )}
-              {authLoading ? 'Verifying...' : 'Sign in as Lecturer'}
+              <Users className="w-8 h-8 text-ur-yellow" />
+              <span className="text-[12px] uppercase tracking-widest">Enter Faculty Admin</span>
             </button>
           </div>
 
