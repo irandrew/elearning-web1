@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { auth, db, signInWithGoogle } from './lib/firebase';
+import { auth, db, signInWithGoogle, getRedirectUser } from './lib/firebase';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { UserProfile, UserRole, Course, Enrollment, Module, SystemLog } from './types';
@@ -206,6 +206,16 @@ export default function App() {
   };
 
   useEffect(() => {
+    const checkRedirect = async () => {
+      const u = await getRedirectUser();
+      if (u) {
+        // We'll trust the asLecturer intent was previously captured or default to student
+        // In this specific flow, it's safer to just let the standard onAuthStateChanged handle the profile loading
+        console.log("Redirect sign-in detected for", u.email);
+      }
+    };
+    checkRedirect();
+
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
@@ -230,10 +240,12 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  const handleLogin = async (asLecturer: boolean = false) => {
+  const handleLogin = async (asLecturer: boolean = false, useRedirect: boolean = false) => {
     try {
       setAuthLoading(true);
-      const u = await signInWithGoogle();
+      const u = await signInWithGoogle(useRedirect);
+      if (useRedirect) return; // Browser will navigate away
+
       if (u) {
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
@@ -273,9 +285,21 @@ export default function App() {
         showToast(`Welcome back, ${profile.displayName}`, "success");
       }
     } catch (e: any) {
-      console.error(e);
-      await LogService.log('error', 'Auth', `Login failure: ${e.message}`);
-      showToast("Authentication interrupted", "error");
+      console.error("Full Auth Error:", e);
+      await LogService.log('error', 'Auth', `Login failure: ${e.code || e.message}`);
+      
+      let friendlyMessage = "Authentication interrupted";
+      if (e.code === 'auth/popup-blocked') {
+        friendlyMessage = "Popup blocked. Attempting alternative connection...";
+        // Semi-automatic fallback to redirect if popup is blocked
+        setTimeout(() => handleLogin(asLecturer, true), 2000);
+      } else if (e.code === 'auth/popup-closed-by-user') {
+        friendlyMessage = "Sign-in window closed. Please try again.";
+      } else if (e.message) {
+        friendlyMessage = e.message;
+      }
+      
+      showToast(friendlyMessage, "error");
     } finally {
       setAuthLoading(false);
       setLoading(false);
