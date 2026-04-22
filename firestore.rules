@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isEmailVerified() { return request.auth.token.email_verified == true; }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isLecturer() {
+      return isSignedIn() && getUserData(request.auth.uid).role == 'lecturer';
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+             data.keys().size() <= 7 &&
+             data.uid == request.auth.uid &&
+             data.email == request.auth.token.email &&
+             data.role in ['student', 'lecturer'] &&
+             data.createdAt == request.time;
+    }
+
+    function isValidCourse(data) {
+      return data.keys().hasAll(['title', 'code', 'lecturerId', 'createdAt']) &&
+             data.title is string && data.title.size() <= 200 &&
+             data.code is string && data.code.size() <= 20 &&
+             data.lecturerId == request.auth.uid &&
+             data.createdAt == request.time;
+    }
+
+    function isValidEnrollment(data) {
+      return data.keys().hasAll(['userId', 'courseId', 'enrolledAt']) &&
+             data.userId == request.auth.uid &&
+             data.courseId is string &&
+             data.enrolledAt == request.time;
+    }
+
+    // --- Rules ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if false; // Users shouldn't be listable generally for security
+      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming());
+      allow update: if isSignedIn() && isOwner(userId) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']) &&
+                      incoming().uid == existing().uid &&
+                      incoming().role == existing().role;
+    }
+
+    match /courses/{courseId} {
+      allow read: if isSignedIn();
+      allow create: if isLecturer() && isValidId(courseId) && isValidCourse(incoming());
+      allow update: if isLecturer() && existing().lecturerId == request.auth.uid && 
+                      isValidCourse(incoming()) &&
+                      incoming().lecturerId == existing().lecturerId;
+      allow delete: if isLecturer() && existing().lecturerId == request.auth.uid;
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || isLecturer());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isLecturer());
+      allow create: if isSignedIn() && isValidId(enrollmentId) && isValidEnrollment(incoming());
+      allow update: if isSignedIn() && isOwner(existing().userId) &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'completedModuleIds', 'lastAccessed']) &&
+                      incoming().userId == existing().userId &&
+                      incoming().courseId == existing().courseId;
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and role within the UR e-Learning system.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "lecturer"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Information about a university course offered in the portal.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "code": { "type": "string", "description": "Course code (e.g., CSC311)" },
+        "lecturerId": { "type": "string", "description": "ID of the lecturer who created the course" },
+        "lecturerName": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "modules": {
+          "type": "array",
+          "description": "List of course modules/lessons"
+        },
+        "enrolledStudents": { "type": "number", "description": "Current number of enrolled students" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "lecturerId", "code"]
+    },
+    "Enrollment": {
+      "title": "Enrollment",
+      "description": "Link between a student and a course with progress tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Composite ID: userId_courseId" },
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "progress": { "type": "number", "description": "Percentage completion (0-100)" },
+        "completedModuleIds": { "type": "array", "description": "IDs of completed modules" },
+        "enrolledAt": { "type": "string", "format": "date-time" },
+        "lastAccessed": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "courseId"]
+    },
+    "SystemLog": {
+      "title": "System Log",
+      "description": "Captured deployment and runtime events for administrative review.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["error", "warning", "info"] },
+        "component": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "message", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profiles."
+    },
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "Stores course catalog details."
+    },
+    "/enrollments/{enrollmentId}": {
+      "schema": "Enrollment",
+      "description": "Tracks student progress per course."
+    },
+    "/system_logs/{logId}": {
+      "schema": "SystemLog",
+      "description": "General system event logs."
+    }
+  }
+}
